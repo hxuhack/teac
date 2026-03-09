@@ -109,6 +109,16 @@ pub struct FnCall {
     pub vals: RightValList,
 }
 
+impl FnCall {
+    pub fn qualified_name(&self) -> String {
+        if let Some(module) = &self.module_prefix {
+            format!("{module}::{}", self.name)
+        } else {
+            self.name.clone()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ExprUnitInner {
     Num(i32),

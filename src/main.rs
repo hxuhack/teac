@@ -64,7 +64,10 @@ fn run() -> Result<()> {
             .context("failed to write AST output");
     }
 
-    let ast = parser.program.as_ref().unwrap();
+    let ast = parser
+        .program
+        .as_ref()
+        .context("internal parser state missing AST after parse")?;
     let mut ir_gen = ir::IrGenerator::new(ast);
     ir_gen.generate().context("failed to generate IR")?;
 

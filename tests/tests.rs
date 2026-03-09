@@ -675,3 +675,9 @@ fn unique_path() {
     ensure_std();
     test_single("unique_path");
 }
+
+#[test]
+fn type_infer() {
+    ensure_std();
+    test_single("type_infer");
+}

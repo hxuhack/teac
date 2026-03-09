@@ -644,11 +644,7 @@ impl DisplayAsTree for FnCall {
         indent_levels: &[bool],
         is_last: bool,
     ) -> Result<(), Error> {
-        let fn_name = if let Some(module) = &self.module_prefix {
-            format!("{}::{}", module, self.name)
-        } else {
-            self.name.clone()
-        };
+        let fn_name = self.qualified_name();
         writeln!(
             f,
             "{}FnCall: {}",
@@ -702,4 +698,3 @@ impl DisplayAsTree for BoolUOpExpr {
         self.cond.fmt_tree(f, &new_indent, true)
     }
 }
-

@@ -1,0 +1,150 @@
+use std;
+
+fn square(x:i32) -> i32 {
+    return x * x;
+}
+
+fn max(a:i32, b:i32) -> i32 {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+fn fib(n:i32) -> i32 {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fn sum_range(lo:i32, hi:i32) -> i32 {
+    let acc:i32 = 0;
+    let i:i32 = lo;
+    while i <= hi {
+        acc = acc + i;
+        i = i + 1;
+    }
+    return acc;
+}
+
+fn main() -> i32 {
+    let a = 10;
+    let b = 3;
+    std::putint(a);
+    std::putch(32);
+    std::putint(b);
+    std::putch(10);
+
+    let sum = a + b;
+    let diff = a - b;
+    let prod = a * b;
+    let quot = a / b;
+    std::putint(sum);
+    std::putch(32);
+    std::putint(diff);
+    std::putch(32);
+    std::putint(prod);
+    std::putch(32);
+    std::putint(quot);
+    std::putch(10);
+
+    let sq = square(a);
+    let mx = max(a, b);
+    std::putint(sq);
+    std::putch(32);
+    std::putint(mx);
+    std::putch(10);
+
+    let c = sq + mx;
+    let d = square(c / 10);
+    std::putint(c);
+    std::putch(32);
+    std::putint(d);
+    std::putch(10);
+
+    let e;
+    e = a + b + sq;
+    std::putint(e);
+    std::putch(10);
+
+    let total;
+    total = 0;
+    let i = 1;
+    while i <= 10 {
+        total = total + i;
+        i = i + 1;
+    }
+    std::putint(total);
+    std::putch(10);
+
+    let x = 7;
+    let y = square(x);
+    let z = max(y, sq);
+    std::putint(y);
+    std::putch(32);
+    std::putint(z);
+    std::putch(10);
+
+    let p = 5;
+    let q = 8;
+    let r = (p + q) * (q - p);
+    std::putint(r);
+    std::putch(10);
+
+    let arr[5] = {10, 20, 30, 40, 50};
+    let idx = 4;
+    std::putint(arr[idx]);
+    std::putch(32);
+    std::putint(arr[0] + arr[idx]);
+    std::putch(10);
+
+    let fib7 = fib(7);
+    let fib10 = fib(10);
+    std::putint(fib7);
+    std::putch(32);
+    std::putint(fib10);
+    std::putch(10);
+
+    let m;
+    let n;
+    m = fib7 * 2;
+    n = m + fib10;
+    std::putint(m);
+    std::putch(32);
+    std::putint(n);
+    std::putch(10);
+
+    let count = 0;
+    let limit = 1000;
+    let k = 1;
+    while k < limit {
+        k = k * 2;
+        count = count + 1;
+    }
+    std::putint(k);
+    std::putch(32);
+    std::putint(count);
+    std::putch(10);
+
+    let s = sum_range(1, 100);
+    std::putint(s);
+    std::putch(10);
+
+    let v1 = 2;
+    let v2 = v1 + v1;
+    let v3 = v2 * v2;
+    let v4 = v3 + v3 * v2;
+    std::putint(v4);
+    std::putch(10);
+
+    let w;
+    w = 1;
+    w = w + w;
+    w = w * w;
+    w = w + 1;
+    std::putint(w);
+    std::putch(10);
+
+    return 0;
+}

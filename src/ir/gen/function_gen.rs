@@ -5,12 +5,24 @@ use crate::ir::types::Dtype;
 use crate::ir::value::{LocalVariable, Operand};
 use crate::ir::Error;
 
+enum LocalStoragePlan {
+    Deferred,
+    Alloca(Dtype),
+}
+
 impl<'ir> FunctionGenerator<'ir> {
     pub fn generate(&mut self, from: &ast::FnDef) -> Result<(), Error> {
         let identifier = &from.fn_decl.identifier;
-        let function_type = self.registry.function_types.get(identifier).unwrap();
+        let function_type = self
+            .registry
+            .function_types
+            .get(identifier)
+            .ok_or_else(|| Error::FunctionNotDefined {
+                symbol: identifier.clone(),
+            })?;
 
         let arguments = function_type.arguments.clone();
+        let return_dtype = function_type.return_dtype.clone();
         self.emit_label(BlockLabel::Function(identifier.clone()));
 
         for (id, dtype) in arguments.iter() {
@@ -37,14 +49,7 @@ impl<'ir> FunctionGenerator<'ir> {
 
         if let Some(stmt) = self.irs.last() {
             if !matches!(stmt.inner, StmtInner::Return(_)) {
-                let return_type = self
-                    .registry
-                    .function_types
-                    .get(identifier)
-                    .map(|ft| &ft.return_dtype)
-                    .unwrap();
-
-                match return_type {
+                match &return_dtype {
                     Dtype::I32 => {
                         self.emit_return(Some(Operand::from(0)));
                     }
@@ -112,51 +117,95 @@ impl<'ir> FunctionGenerator<'ir> {
         Ok(())
     }
 
-    pub fn handle_local_var_decl(&mut self, decl: &ast::VarDecl) -> Result<(), Error> {
-        let identifier = &decl.identifier;
-        let dtype = decl.type_specifier.as_ref().as_ref().map(Dtype::from);
+    fn insert_scoped_local(
+        &mut self,
+        identifier: &str,
+        variable: LocalVariable,
+    ) -> Result<(), Error> {
+        if self
+            .local_variables
+            .insert(identifier.to_string(), variable)
+            .is_some()
+        {
+            return Err(Error::VariableRedefinition {
+                symbol: identifier.to_string(),
+            });
+        }
+        self.record_scoped_local(identifier.to_string());
+        Ok(())
+    }
 
-        let (var_dtype, needs_alloca) = match (&decl.inner, &dtype) {
-            (ast::VarDeclInner::Scalar, None) => (Dtype::Undecided, false),
-            (ast::VarDeclInner::Scalar, Some(Dtype::I32)) => (Dtype::ptr_to(Dtype::I32), true),
-            (ast::VarDeclInner::Array(arr), None) => {
-                (Dtype::ptr_to(Dtype::array_of(Dtype::I32, arr.len)), true)
+    fn allocate_pointer_local(&mut self, identifier: &str, pointee: Dtype) -> LocalVariable {
+        let variable = LocalVariable::new(
+            Dtype::ptr_to(pointee),
+            self.alloc_vreg(),
+            Some(identifier.to_string()),
+        );
+        self.emit_alloca(Operand::from(variable.clone()));
+        variable
+    }
+
+    fn define_scalar_local(
+        &mut self,
+        identifier: &str,
+        pointee: Dtype,
+        right_val: Operand,
+    ) -> LocalVariable {
+        let local = self.allocate_pointer_local(identifier, pointee);
+        self.emit_store(right_val, Operand::from(local.clone()));
+        local
+    }
+
+    fn plan_local_decl_storage(decl: &ast::VarDecl) -> Result<LocalStoragePlan, Error> {
+        let dtype = decl.type_specifier.as_ref().as_ref().map(Dtype::from);
+        match (&decl.inner, dtype.as_ref()) {
+            (ast::VarDeclInner::Scalar, None) => Ok(LocalStoragePlan::Deferred),
+            (ast::VarDeclInner::Scalar, Some(Dtype::I32)) => {
+                Ok(LocalStoragePlan::Alloca(Dtype::I32))
             }
-            (ast::VarDeclInner::Array(arr), Some(Dtype::I32)) => {
-                (Dtype::ptr_to(Dtype::array_of(Dtype::I32, arr.len)), true)
-            }
-            (ast::VarDeclInner::Array(arr), Some(Dtype::Struct { type_name })) => (
-                Dtype::ptr_to(Dtype::array_of(
+            (ast::VarDeclInner::Array(arr), None | Some(Dtype::I32)) => Ok(
+                LocalStoragePlan::Alloca(Dtype::array_of(Dtype::I32, arr.len)),
+            ),
+            (ast::VarDeclInner::Array(arr), Some(Dtype::Struct { type_name })) => {
+                Ok(LocalStoragePlan::Alloca(Dtype::array_of(
                     Dtype::Struct {
                         type_name: type_name.clone(),
                     },
                     arr.len,
-                )),
-                true,
+                )))
+            }
+            // Slice types (&[T]) are only valid for function parameters, not local variables.
+            (ast::VarDeclInner::Slice, _) => Err(Error::LocalVarDefinitionUnsupported),
+            _ => Err(Error::LocalVarDefinitionUnsupported),
+        }
+    }
+
+    fn plan_local_scalar_def_storage(dtype: &Option<Dtype>) -> Result<LocalStoragePlan, Error> {
+        match dtype.as_ref() {
+            None => Ok(LocalStoragePlan::Deferred),
+            Some(Dtype::I32) => Ok(LocalStoragePlan::Alloca(Dtype::I32)),
+            _ => Err(Error::LocalVarDefinitionUnsupported),
+        }
+    }
+
+    fn plan_local_array_def_storage(dtype: &Option<Dtype>, len: usize) -> Result<Dtype, Error> {
+        match dtype.as_ref() {
+            None | Some(Dtype::I32) => Ok(Dtype::array_of(Dtype::I32, len)),
+            _ => Err(Error::LocalVarDefinitionUnsupported),
+        }
+    }
+
+    pub fn handle_local_var_decl(&mut self, decl: &ast::VarDecl) -> Result<(), Error> {
+        let identifier = decl.identifier.as_str();
+        let variable = match Self::plan_local_decl_storage(decl)? {
+            LocalStoragePlan::Deferred => LocalVariable::new(
+                Dtype::Undecided,
+                self.alloc_vreg(),
+                Some(identifier.to_string()),
             ),
-            // Slice types (&[T]) are only valid for function parameters, not local variables
-            (ast::VarDeclInner::Slice, _) => return Err(Error::LocalVarDefinitionUnsupported),
-            _ => return Err(Error::LocalVarDefinitionUnsupported),
+            LocalStoragePlan::Alloca(pointee) => self.allocate_pointer_local(identifier, pointee),
         };
-
-        let variable = LocalVariable::new(var_dtype, self.alloc_vreg(), Some(identifier.clone()));
-
-        if needs_alloca {
-            self.emit_alloca(Operand::from(variable.clone()));
-        }
-
-        if self
-            .local_variables
-            .insert(identifier.clone(), variable)
-            .is_some()
-        {
-            return Err(Error::VariableRedefinition {
-                symbol: identifier.clone(),
-            });
-        }
-        self.record_scoped_local(identifier.clone());
-
-        Ok(())
+        self.insert_scoped_local(identifier, variable)
     }
 
     pub fn init_array(&mut self, base_ptr: Operand, vals: &RightValList) -> Result<(), Error> {
@@ -175,68 +224,34 @@ impl<'ir> FunctionGenerator<'ir> {
     }
 
     pub fn handle_local_var_def(&mut self, def: &ast::VarDef) -> Result<(), Error> {
-        let identifier = &def.identifier;
+        let identifier = def.identifier.as_str();
         let dtype = def.type_specifier.as_ref().as_ref().map(Dtype::from);
 
         let variable: LocalVariable = match &def.inner {
             ast::VarDefInner::Scalar(scalar) => {
                 let right_val = self.handle_right_val(&scalar.val)?;
-
-                let v = match &dtype {
-                    None => LocalVariable::new(Dtype::Undecided, 0, Some(identifier.clone())),
-                    Some(Dtype::I32) => LocalVariable::new(
-                        Dtype::ptr_to(Dtype::I32),
-                        self.alloc_vreg(),
-                        Some(identifier.clone()),
-                    ),
-                    _ => return Err(Error::LocalVarDefinitionUnsupported),
-                };
-
-                if dtype.is_some() {
-                    self.emit_alloca(Operand::from(v.clone()));
-                    self.emit_store(right_val, Operand::from(v.clone()));
+                match Self::plan_local_scalar_def_storage(&dtype)? {
+                    LocalStoragePlan::Deferred => {
+                        self.define_scalar_local(identifier, right_val.dtype().clone(), right_val)
+                    }
+                    LocalStoragePlan::Alloca(pointee) => {
+                        self.define_scalar_local(identifier, pointee, right_val)
+                    }
                 }
-                v
             }
             ast::VarDefInner::Array(array) => {
-                let (var_dtype, needs_init) = match &dtype {
-                    None => (Dtype::ptr_to(Dtype::array_of(Dtype::I32, array.len)), true),
-                    Some(Dtype::I32) => {
-                        (Dtype::ptr_to(Dtype::array_of(Dtype::I32, array.len)), true)
-                    }
-                    _ => return Err(Error::LocalVarDefinitionUnsupported),
-                };
-
-                let v = LocalVariable::new(var_dtype, self.alloc_vreg(), Some(identifier.clone()));
-
-                if needs_init {
-                    self.emit_alloca(Operand::from(v.clone()));
-                    self.init_array(Operand::from(v.clone()), &array.vals)?;
-                }
-                v
+                let pointee = Self::plan_local_array_def_storage(&dtype, array.len)?;
+                let local = self.allocate_pointer_local(identifier, pointee);
+                self.init_array(Operand::from(local.clone()), &array.vals)?;
+                local
             }
         };
 
-        if self
-            .local_variables
-            .insert(identifier.clone(), variable)
-            .is_some()
-        {
-            return Err(Error::VariableRedefinition {
-                symbol: identifier.clone(),
-            });
-        }
-        self.record_scoped_local(identifier.clone());
-
-        Ok(())
+        self.insert_scoped_local(identifier, variable)
     }
 
     pub fn handle_call_stmt(&mut self, stmt: &ast::CallStmt) -> Result<(), Error> {
-        let function_name = if let Some(module) = &stmt.fn_call.module_prefix {
-            format!("{}::{}", module, stmt.fn_call.name)
-        } else {
-            stmt.fn_call.name.clone()
-        };
+        let function_name = stmt.fn_call.qualified_name();
         let mut args = Vec::new();
         for arg in stmt.fn_call.vals.iter() {
             let right_val = self.handle_right_val(arg)?;
@@ -372,11 +387,7 @@ impl<'ir> FunctionGenerator<'ir> {
             ast::ExprUnitInner::Id(id) => self.lookup_variable(id),
             ast::ExprUnitInner::ArithExpr(expr) => self.handle_arith_expr(expr),
             ast::ExprUnitInner::FnCall(fn_call) => {
-                let name = if let Some(module) = &fn_call.module_prefix {
-                    format!("{}::{}", module, fn_call.name)
-                } else {
-                    fn_call.name.clone()
-                };
+                let name = fn_call.qualified_name();
                 let return_dtype = &self
                     .registry
                     .function_types

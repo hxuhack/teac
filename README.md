@@ -26,7 +26,7 @@ cargo run -- tests/dfs/dfs.tea
 Compile to AArch64 assembly:
 
 ```bash
-cargo run -- tests/dfs/dfs.tea -d s -o dfs.s
+cargo run -- tests/dfs/dfs.tea --emit asm -o dfs.s
 ```
 
 ## Usage
@@ -38,8 +38,9 @@ Arguments:
   <FILE>  Input file (.tea source)
 
 Options:
-  -d <MODE>        Dump mode: ast, ir (default), or s (assembly)
-  -o <FILE>        Output file (default: input with .ll or .s extension)
+  --emit <EMIT>    Output target: ast, ir, or asm (default: asm)
+  -o, --output <FILE>
+                   Output file (default: stdout)
   -h, --help       Print help
 ```
 
@@ -47,13 +48,13 @@ Options:
 
 ```bash
 # Dump AST
-cargo run -- program.tea -d ast
+cargo run -- program.tea --emit ast
 
-# Generate LLVM IR (default)
-cargo run -- program.tea -o program.ll
+# Generate LLVM IR
+cargo run -- program.tea --emit ir -o program.ll
 
 # Generate AArch64 assembly
-cargo run -- program.tea -d s -o program.s
+cargo run -- program.tea --emit asm -o program.s
 ```
 
 ## Project Structure

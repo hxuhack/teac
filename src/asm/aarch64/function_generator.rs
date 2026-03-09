@@ -198,7 +198,10 @@ impl<'a> FunctionGenerator<'a> {
         self.insts.push(Inst::RestoreCallerRegs);
 
         if let Some(res) = &s.res {
-            self.emit_call_result(res.as_local().unwrap())?;
+            let local = res
+                .as_local()
+                .ok_or_else(|| Error::Internal("call result must be a local operand".into()))?;
+            self.emit_call_result(local)?;
         }
         Ok(())
     }

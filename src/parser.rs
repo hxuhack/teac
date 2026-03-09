@@ -470,32 +470,25 @@ fn parse_bool_unit_paren(pair: Pair) -> ParseResult<Box<ast::BoolUnit>> {
         }));
     }
 
-    if filtered.len() == 3 {
-        return parse_comparison_to_bool_unit(
-            pos,
-            filtered[0].clone(),
-            filtered[1].clone(),
-            filtered[2].clone(),
-        );
-    }
-
-    Err(Error::Grammar("bool_unit_paren"))
+    parse_comparison_pair_triple(pos, &filtered, "bool_unit_paren")
 }
 
 fn parse_bool_comparison(pair: Pair) -> ParseResult<Box<ast::BoolUnit>> {
     let pos = get_pos(&pair);
     let inner_pairs: Vec<_> = pair.into_inner().collect();
+    parse_comparison_pair_triple(pos, &inner_pairs, "bool_comparison")
+}
 
-    if inner_pairs.len() == 3 {
-        return parse_comparison_to_bool_unit(
-            pos,
-            inner_pairs[0].clone(),
-            inner_pairs[1].clone(),
-            inner_pairs[2].clone(),
-        );
+fn parse_comparison_pair_triple(
+    pos: usize,
+    pairs: &[Pair],
+    context: &'static str,
+) -> ParseResult<Box<ast::BoolUnit>> {
+    if pairs.len() != 3 {
+        return Err(Error::Grammar(context));
     }
 
-    Err(Error::Grammar("bool_comparison"))
+    parse_comparison_to_bool_unit(pos, pairs[0].clone(), pairs[1].clone(), pairs[2].clone())
 }
 
 fn parse_comparison_to_bool_unit(
@@ -678,7 +671,7 @@ fn parse_expr_unit(pair: Pair) -> ParseResult<Box<ast::ExprUnit>> {
         while i < inner_pairs.len() {
             match inner_pairs[i].as_rule() {
                 Rule::expr_suffix => {
-                    base = parse_expr_suffix_to_left_val(base, inner_pairs[i].clone())?;
+                    base = parse_left_val_suffix(base, inner_pairs[i].clone())?;
                     i += 1;
                 }
                 _ => break,
@@ -689,42 +682,6 @@ fn parse_expr_unit(pair: Pair) -> ParseResult<Box<ast::ExprUnit>> {
     }
 
     Err(Error::Grammar("expr_unit"))
-}
-
-fn parse_expr_suffix_to_left_val(
-    base: Box<ast::LeftVal>,
-    suffix: Pair,
-) -> ParseResult<Box<ast::LeftVal>> {
-    let pos = base.pos;
-
-    for inner in suffix.into_inner() {
-        match inner.as_rule() {
-            Rule::lbracket | Rule::rbracket | Rule::dot => continue,
-            Rule::index_expr => {
-                let idx = parse_index_expr(inner)?;
-                return Ok(Box::new(ast::LeftVal {
-                    pos,
-                    inner: ast::LeftValInner::ArrayExpr(Box::new(ast::ArrayExpr {
-                        arr: base,
-                        idx,
-                    })),
-                }));
-            }
-            Rule::identifier => {
-                let member_id = inner.as_str().to_string();
-                return Ok(Box::new(ast::LeftVal {
-                    pos,
-                    inner: ast::LeftValInner::MemberExpr(Box::new(ast::MemberExpr {
-                        struct_id: base,
-                        member_id,
-                    })),
-                }));
-            }
-            _ => {}
-        }
-    }
-
-    Ok(base)
 }
 
 fn left_val_to_expr_unit(lval: ast::LeftVal) -> ParseResult<Box<ast::ExprUnit>> {
@@ -1068,13 +1025,8 @@ fn parse_if_stmt(pair: Pair) -> ParseResult<Box<ast::IfStmt>> {
             }
             Rule::code_block_stmt => {
                 if in_else {
-                    if else_stmts.is_none() {
-                        else_stmts = Some(Vec::new());
-                    }
-                    else_stmts
-                        .as_mut()
-                        .unwrap()
-                        .push(*parse_code_block_stmt(inner)?);
+                    let else_branch = else_stmts.get_or_insert_with(Vec::new);
+                    else_branch.push(*parse_code_block_stmt(inner)?);
                 } else {
                     if_stmts.push(*parse_code_block_stmt(inner)?);
                 }

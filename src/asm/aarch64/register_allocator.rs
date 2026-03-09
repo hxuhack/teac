@@ -57,11 +57,7 @@ impl InterferenceGraph {
     fn build(instructions: &[Inst], liveness: &BackwardLiveness<VregSet>) -> Self {
         let nodes: HashSet<usize> = instructions
             .iter()
-            .flat_map(|inst| {
-                inst.used_vregs()
-                    .into_iter()
-                    .chain(inst.defined_vregs())
-            })
+            .flat_map(|inst| inst.used_vregs().into_iter().chain(inst.defined_vregs()))
             .collect();
 
         if nodes.is_empty() {
@@ -78,8 +74,8 @@ impl InterferenceGraph {
             for d in inst.defined_vregs() {
                 for &r in &liveness.live_out[i].0 {
                     if d != r {
-                        adjacency.get_mut(&d).unwrap().insert(r);
-                        adjacency.get_mut(&r).unwrap().insert(d);
+                        adjacency.entry(d).or_default().insert(r);
+                        adjacency.entry(r).or_default().insert(d);
                     }
                 }
             }

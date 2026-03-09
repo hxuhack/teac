@@ -83,7 +83,13 @@ impl<'a> Generator for IrGenerator<'a> {
         printer.emit_newline()?;
 
         for func in self.module.function_list.values() {
-            let func_type = self.registry.function_types.get(&func.identifier).unwrap();
+            let func_type = self
+                .registry
+                .function_types
+                .get(&func.identifier)
+                .ok_or_else(|| Error::FunctionNotDefined {
+                    symbol: func.identifier.clone(),
+                })?;
             if let Some(blocks) = &func.blocks {
                 printer.emit_function_def(func, &func_type.return_dtype, blocks)?;
             } else {
@@ -259,7 +265,7 @@ impl<'a> IrGenerator<'a> {
         let mut arguments = Vec::new();
         if let Some(params) = &decl.param_decl {
             for decl in params.decls.iter() {
-                let id = decl.identifier().unwrap();
+                let id = decl.identifier().ok_or(Error::SymbolMissing)?;
                 let dtype = Dtype::try_from(decl)?;
                 arguments.push((id, dtype));
             }
