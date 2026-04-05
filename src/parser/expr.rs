@@ -1,9 +1,15 @@
+//! Expression-related parsing for TeaLang.
+//!
+//! This module handles arithmetic expressions, boolean expressions, comparison
+//! expressions, function calls, and left-value / right-value parsing.
+
 use crate::ast;
 
 use super::common::{get_pos, grammar_error, parse_num, Pair, ParseResult, Rule};
 use super::ParseContext;
 
 impl<'a> ParseContext<'a> {
+    /// Parses a comma-separated list of right values.
     pub(crate) fn parse_right_val_list(&self, pair: Pair) -> ParseResult<Vec<ast::RightVal>> {
         let mut vals = Vec::new();
         for inner in pair.into_inner() {
@@ -14,6 +20,8 @@ impl<'a> ParseContext<'a> {
         Ok(vals)
     }
 
+    /// Parses a single right value, which is either a boolean expression or an
+    /// arithmetic expression.
     pub(crate) fn parse_right_val(&self, pair: Pair) -> ParseResult<Box<ast::RightVal>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -35,6 +43,8 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("right_val", &pair_for_error))
     }
 
+    /// Parses a boolean expression, handling `||` as a left-associative binary
+    /// operator over boolean AND-terms.
     pub(crate) fn parse_bool_expr(&self, pair: Pair) -> ParseResult<Box<ast::BoolExpr>> {
         let pair_for_error = pair.clone();
         let inner_pairs: Vec<_> = pair.into_inner().collect();
@@ -66,6 +76,8 @@ impl<'a> ParseContext<'a> {
         Ok(expr)
     }
 
+    /// Parses a boolean AND-term, handling `&&` as a left-associative binary
+    /// operator over boolean unit atoms.
     fn parse_bool_and_term(&self, pair: Pair) -> ParseResult<Box<ast::BoolExpr>> {
         let pair_for_error = pair.clone();
         let inner_pairs: Vec<_> = pair.into_inner().collect();
@@ -106,6 +118,12 @@ impl<'a> ParseContext<'a> {
         Ok(expr)
     }
 
+    /// Parses a boolean unit atom.
+    ///
+    /// Handles:
+    /// - `!<atom>` (logical NOT)
+    /// - A parenthesised sub-expression (`bool_unit_paren`)
+    /// - A direct comparison expression (`bool_comparison`)
     fn parse_bool_unit_atom(&self, pair: Pair) -> ParseResult<Box<ast::BoolUnit>> {
         let pair_for_error = pair.clone();
         let pos = get_pos(&pair);
@@ -137,6 +155,10 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("bool_unit_atom", &pair_for_error))
     }
 
+    /// Parses a parenthesised boolean unit.
+    ///
+    /// The content between the parentheses is either a full boolean expression
+    /// or a comparison triple (`left op right`).
     fn parse_bool_unit_paren(&self, pair: Pair) -> ParseResult<Box<ast::BoolUnit>> {
         let pair_for_error = pair.clone();
         let pos = get_pos(&pair);
@@ -157,6 +179,8 @@ impl<'a> ParseContext<'a> {
         self.parse_comparison_pair_triple(pos, &filtered, "bool_unit_paren", &pair_for_error)
     }
 
+    /// Parses a bare comparison expression (`left op right`) into a
+    /// [`ast::BoolUnit`].
     fn parse_bool_comparison(&self, pair: Pair) -> ParseResult<Box<ast::BoolUnit>> {
         let pair_for_error = pair.clone();
         let pos = get_pos(&pair);
@@ -164,6 +188,8 @@ impl<'a> ParseContext<'a> {
         self.parse_comparison_pair_triple(pos, &inner_pairs, "bool_comparison", &pair_for_error)
     }
 
+    /// Validates that `pairs` has exactly three elements (left, op, right) and
+    /// delegates to [`parse_comparison_to_bool_unit`](Self::parse_comparison_to_bool_unit).
     fn parse_comparison_pair_triple(
         &self,
         pos: usize,
@@ -183,6 +209,8 @@ impl<'a> ParseContext<'a> {
         )
     }
 
+    /// Assembles a comparison triple `(left_pair, op_pair, right_pair)` into a
+    /// [`ast::BoolUnit::ComExpr`] node.
     fn parse_comparison_to_bool_unit(
         &self,
         pos: usize,
@@ -200,6 +228,7 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a comparison operator token (`<`, `>`, `<=`, `>=`, `==`, `!=`).
     fn parse_comp_op(&self, pair: Pair) -> ParseResult<ast::ComOp> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -216,6 +245,8 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("comp_op", &pair_for_error))
     }
 
+    /// Parses an arithmetic expression, handling `+` and `-` as
+    /// left-associative binary operators over arithmetic terms.
     pub(crate) fn parse_arith_expr(&self, pair: Pair) -> ParseResult<Box<ast::ArithExpr>> {
         let pair_for_error = pair.clone();
         let inner_pairs: Vec<_> = pair.into_inner().collect();
@@ -249,6 +280,8 @@ impl<'a> ParseContext<'a> {
         Ok(expr)
     }
 
+    /// Parses an arithmetic term, handling `*` and `/` as left-associative
+    /// binary operators over expression units.
     fn parse_arith_term(&self, pair: Pair) -> ParseResult<Box<ast::ArithExpr>> {
         let pair_for_error = pair.clone();
         let inner_pairs: Vec<_> = pair.into_inner().collect();
@@ -290,6 +323,7 @@ impl<'a> ParseContext<'a> {
         Ok(expr)
     }
 
+    /// Parses an additive operator token (`+` or `-`).
     fn parse_arith_add_op(&self, pair: Pair) -> ParseResult<ast::ArithBiOp> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -302,6 +336,7 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("arith_add_op", &pair_for_error))
     }
 
+    /// Parses a multiplicative operator token (`*` or `/`).
     fn parse_arith_mul_op(&self, pair: Pair) -> ParseResult<ast::ArithBiOp> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -314,6 +349,16 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("arith_mul_op", &pair_for_error))
     }
 
+    /// Parses an expression unit – the lowest-precedence leaf of an arithmetic
+    /// expression.
+    ///
+    /// Recognised forms (in order):
+    /// 1. Negated integer literal: `-N`
+    /// 2. Parenthesised arithmetic expression: `(<arith_expr>)`
+    /// 3. Function call: `fn_call`
+    /// 4. Integer literal: `N`
+    /// 5. Reference: `&id`
+    /// 6. Identifier / array-access / member-access chain: `id[…].…`
     pub(crate) fn parse_expr_unit(&self, pair: Pair) -> ParseResult<Box<ast::ExprUnit>> {
         let pair_for_error = pair.clone();
         let pos = get_pos(&pair);
@@ -394,6 +439,8 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("expr_unit", &pair_for_error))
     }
 
+    /// Parses an array index expression, which is either an integer literal or
+    /// an identifier.
     pub(crate) fn parse_index_expr(&self, pair: Pair) -> ParseResult<Box<ast::IndexExpr>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -415,6 +462,8 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("index_expr", &pair_for_error))
     }
 
+    /// Parses a function call, dispatching to either a module-prefixed call
+    /// (`mod::func(...)`) or a local call (`func(...)`).
     pub(crate) fn parse_fn_call(&self, pair: Pair) -> ParseResult<Box<ast::FnCall>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -431,6 +480,10 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("fn_call", &pair_for_error))
     }
 
+    /// Parses a module-prefixed function call such as `module::func(args)`.
+    ///
+    /// All but the last identifier form the module path; the last is the
+    /// function name.
     fn parse_module_prefixed_call(&self, pair: Pair) -> ParseResult<Box<ast::FnCall>> {
         let inner_pairs: Vec<_> = pair.into_inner().collect();
         let mut idents: Vec<String> = Vec::new();
@@ -458,6 +511,7 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a local (non-module-qualified) function call such as `func(args)`.
     fn parse_local_call(&self, pair: Pair) -> ParseResult<Box<ast::FnCall>> {
         let mut name = String::new();
         let mut vals = Vec::new();
@@ -477,6 +531,9 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a left value starting from an identifier, then processes any
+    /// trailing `expr_suffix` nodes to build up array-access or member-access
+    /// chains.
     pub(crate) fn parse_left_val(&self, pair: Pair) -> ParseResult<Box<ast::LeftVal>> {
         let pair_for_error = pair.clone();
         let pos = get_pos(&pair);
@@ -507,6 +564,10 @@ impl<'a> ParseContext<'a> {
         Ok(base)
     }
 
+    /// Applies a single left-value suffix to `base`.
+    ///
+    /// - `[index_expr]` → wraps `base` in an [`ast::ArrayExpr`].
+    /// - `.identifier`  → wraps `base` in an [`ast::MemberExpr`].
     pub(crate) fn parse_expr_suffix(
         &self,
         base: Box<ast::LeftVal>,
@@ -545,6 +606,10 @@ impl<'a> ParseContext<'a> {
     }
 }
 
+/// Converts a [`ast::LeftVal`] into the corresponding [`ast::ExprUnit`] variant:
+/// - `Id`         → `ExprUnitInner::Id`
+/// - `ArrayExpr`  → `ExprUnitInner::ArrayExpr`
+/// - `MemberExpr` → `ExprUnitInner::MemberExpr`
 fn left_val_to_expr_unit(lval: ast::LeftVal) -> ParseResult<Box<ast::ExprUnit>> {
     let pos = lval.pos;
 
