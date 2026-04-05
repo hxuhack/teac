@@ -1,9 +1,21 @@
+//! Statement-related parsing for TeaLang.
+//!
+//! This module handles code-block statements: variable declarations,
+//! assignments, function-call statements, and control-flow constructs
+//! (`if`/`else`, `while`, `return`, `continue`, `break`, `null`).
+
 use crate::ast;
 
 use super::ParseContext;
 use super::common::{ParseResult, Pair, Rule, get_pos, grammar_error};
 
 impl<'a> ParseContext<'a> {
+    /// Parses a single code-block statement.
+    ///
+    /// Inspects the inner pest rule and dispatches to the appropriate
+    /// sub-parser, covering:
+    /// `var_decl_stmt`, `assignment_stmt`, `call_stmt`, `if_stmt`,
+    /// `while_stmt`, `return_stmt`, `continue_stmt`, `break_stmt`, `null_stmt`.
     pub(crate) fn parse_code_block_stmt(&self, pair: Pair) -> ParseResult<Box<ast::CodeBlockStmt>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -62,6 +74,7 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("code_block_stmt", &pair_for_error))
     }
 
+    /// Parses an assignment statement of the form `left_val = right_val;`.
     fn parse_assignment_stmt(&self, pair: Pair) -> ParseResult<Box<ast::AssignmentStmt>> {
         let pair_for_error = pair.clone();
         let mut left_val = None;
@@ -83,6 +96,8 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a function-call statement (a function call used as a statement,
+    /// discarding the return value).
     fn parse_call_stmt(&self, pair: Pair) -> ParseResult<Box<ast::CallStmt>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -96,6 +111,7 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("call_stmt", &pair_for_error))
     }
 
+    /// Parses a `return` statement with an optional return value.
     fn parse_return_stmt(&self, pair: Pair) -> ParseResult<Box<ast::ReturnStmt>> {
         let mut val = None;
 
@@ -108,6 +124,10 @@ impl<'a> ParseContext<'a> {
         Ok(Box::new(ast::ReturnStmt { val }))
     }
 
+    /// Parses an `if`/`else` statement.
+    ///
+    /// Collects the boolean condition, the if-branch statement list, and an
+    /// optional else-branch statement list.
     fn parse_if_stmt(&self, pair: Pair) -> ParseResult<Box<ast::IfStmt>> {
         let pair_for_error = pair.clone();
         let mut bool_unit = None;
@@ -147,6 +167,9 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a `while` loop statement.
+    ///
+    /// Collects the boolean loop condition and the loop-body statement list.
     fn parse_while_stmt(&self, pair: Pair) -> ParseResult<Box<ast::WhileStmt>> {
         let pair_for_error = pair.clone();
         let mut bool_unit = None;

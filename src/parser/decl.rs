@@ -1,9 +1,19 @@
+//! Declaration-related parsing for TeaLang.
+//!
+//! This module handles `use` statements, top-level program elements, struct
+//! definitions, variable declarations/definitions, function declarations, and
+//! function definitions.
+
 use crate::ast;
 
 use super::common::{get_pos, grammar_error, parse_num, Pair, ParseResult, Rule};
 use super::ParseContext;
 
 impl<'a> ParseContext<'a> {
+    /// Parses a `use` statement and returns the module path as a
+    /// `"::"`-separated string.
+    ///
+    /// Example: `use foo::bar;` → `"foo::bar"`.
     pub(crate) fn parse_use_stmt(&self, pair: Pair) -> ParseResult<ast::UseStmt> {
         let parts: Vec<&str> = pair
             .into_inner()
@@ -15,6 +25,15 @@ impl<'a> ParseContext<'a> {
         })
     }
 
+    /// Parses a top-level program element.
+    ///
+    /// Dispatches to one of:
+    /// - [`parse_var_decl_stmt`](Self::parse_var_decl_stmt)
+    /// - [`parse_struct_def`](Self::parse_struct_def)
+    /// - [`parse_fn_decl_stmt`](Self::parse_fn_decl_stmt)
+    /// - [`parse_fn_def`](Self::parse_fn_def)
+    ///
+    /// Returns `None` if the inner rule is unrecognised (e.g. whitespace).
     pub(crate) fn parse_program_element(
         &self,
         pair: Pair,
@@ -51,6 +70,8 @@ impl<'a> ParseContext<'a> {
         Ok(None)
     }
 
+    /// Parses a struct definition, extracting the struct name and its field
+    /// declarations.
     pub(crate) fn parse_struct_def(&self, pair: Pair) -> ParseResult<Box<ast::StructDef>> {
         let mut identifier = String::new();
         let mut decls = Vec::new();
@@ -66,6 +87,8 @@ impl<'a> ParseContext<'a> {
         Ok(Box::new(ast::StructDef { identifier, decls }))
     }
 
+    /// Parses a comma-separated list of typed variable declarations
+    /// (e.g. function parameters or struct fields).
     pub(crate) fn parse_typed_var_decl_list(&self, pair: Pair) -> ParseResult<Vec<ast::VarDecl>> {
         let mut decls = Vec::new();
         for inner in pair.into_inner() {
@@ -76,6 +99,10 @@ impl<'a> ParseContext<'a> {
         Ok(decls)
     }
 
+    /// Parses a single typed variable declaration.
+    ///
+    /// Supports both scalar declarations (`name: Type`) and fixed-length array
+    /// declarations (`name: Type[N]`).
     pub(crate) fn parse_var_decl(&self, pair: Pair) -> ParseResult<Box<ast::VarDecl>> {
         let pair_for_error = pair.clone();
         let mut identifier: Option<String> = None;
@@ -112,6 +139,14 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a type specifier.
+    ///
+    /// Handles three forms:
+    /// - Reference type: `&T`
+    /// - Built-in integer type: `i32`
+    /// - Composite (struct) type: `<identifier>`
+    ///
+    /// Returns `None` when the pair contains no recognisable type.
     pub(crate) fn parse_type_spec(&self, pair: Pair) -> ParseResult<Option<ast::TypeSpecifier>> {
         let pos = get_pos(&pair);
 
@@ -152,6 +187,8 @@ impl<'a> ParseContext<'a> {
         Ok(None)
     }
 
+    /// Parses a variable declaration statement, which is either a bare
+    /// declaration (`var_decl`) or a definition with an initialiser (`var_def`).
     pub(crate) fn parse_var_decl_stmt(&self, pair: Pair) -> ParseResult<Box<ast::VarDeclStmt>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -173,6 +210,11 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("var_decl_stmt", &pair_for_error))
     }
 
+    /// Parses a variable definition statement.
+    ///
+    /// Supports two forms:
+    /// - Scalar: `let name [: Type] = <right_val>;`
+    /// - Array:  `let name[N] [: Type] = <array_initializer>;`
     pub(crate) fn parse_var_def(&self, pair: Pair) -> ParseResult<Box<ast::VarDef>> {
         let pair_for_error = pair.clone();
         let inner_pairs: Vec<_> = pair.into_inner().collect();
@@ -247,6 +289,11 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    /// Parses an array initialiser expression.
+    ///
+    /// Two forms are supported:
+    /// - Explicit list: `[v1, v2, ...]`
+    /// - Fill form: `[val; count]` (repeats `val` `count` times)
     fn parse_array_initializer(&self, pair: Pair) -> ParseResult<ast::ArrayInitializer> {
         let pair_for_error = pair.clone();
         let children: Vec<_> = pair.into_inner().collect();
@@ -274,6 +321,7 @@ impl<'a> ParseContext<'a> {
         Ok(ast::ArrayInitializer::Fill { val, count })
     }
 
+    /// Parses a function declaration statement (signature only, no body).
     pub(crate) fn parse_fn_decl_stmt(&self, pair: Pair) -> ParseResult<Box<ast::FnDeclStmt>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -287,6 +335,8 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("fn_decl_stmt", &pair_for_error))
     }
 
+    /// Parses a function signature (name, optional parameter list, optional
+    /// return type).
     fn parse_fn_decl(&self, pair: Pair) -> ParseResult<Box<ast::FnDecl>> {
         let mut identifier = String::new();
         let mut param_decl = None;
@@ -308,6 +358,8 @@ impl<'a> ParseContext<'a> {
         }))
     }
 
+    /// Parses a parameter declaration list, wrapping the typed variable
+    /// declarations in a [`ast::ParamDecl`].
     fn parse_param_decl(&self, pair: Pair) -> ParseResult<Box<ast::ParamDecl>> {
         let pair_for_error = pair.clone();
         for inner in pair.into_inner() {
@@ -320,6 +372,8 @@ impl<'a> ParseContext<'a> {
         Err(grammar_error("param_decl", &pair_for_error))
     }
 
+    /// Parses a complete function definition: a signature followed by a
+    /// sequence of code-block statements that form the function body.
     pub(crate) fn parse_fn_def(&self, pair: Pair) -> ParseResult<Box<ast::FnDef>> {
         let pair_for_error = pair.clone();
         let mut fn_decl = None;
