@@ -18,6 +18,7 @@ use crate::ir::Error;
 
 use crate::common::Generator;
 use crate::ir::value::Named;
+use std::fs;
 use std::io::Write;
 
 /// Implements the two-phase `Generator` trait for the module-level IR generator.
@@ -149,81 +150,55 @@ impl<'a> Generator for IrGenerator<'a> {
 impl<'a> IrGenerator<'a> {
     /// Process a single `use` statement from the source program.
     ///
-    /// Currently only the `std` module is supported.  When `use std` is
-    /// encountered the standard-library function signatures are pre-registered
-    /// so that the rest of the program can call them without explicit
-    /// declarations.  Any other module name is silently ignored (future work
-    /// may raise an error for unknown modules).
+    /// Resolves the path to `<module_name>.teah` relative to the source
+    /// file's directory (`self.source_dir`), reads and parses it using
+    /// the existing [`crate::parser::Parser`], and registers every
+    /// `fn` declaration found in that header into the type registry
+    /// and module function list.
+    ///
+    /// The function name stored in the registry is qualified with the
+    /// module prefix — e.g. a declaration `fn getint() -> i32;` in
+    /// `std.teah` is registered as `"std::getint"` — to match the
+    /// `std::getint()` call-site syntax used in TeaLang source files.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ModuleNotFound`] if the `.teah` file does not
+    /// exist, [`Error::ModuleParseError`] if it cannot be parsed, and
+    /// propagates any [`Error::Io`] encountered while reading the file.
     fn handle_use_stmt(&mut self, use_stmt: &ast::UseStmt) -> Result<(), Error> {
-        if use_stmt.module_name == "std" {
-            self.register_std_functions()?;
+        let module_name = &use_stmt.module_name;
+        let header_path = self.source_dir.join(format!("{module_name}.teah"));
+
+        if !header_path.exists() {
+            return Err(Error::ModuleNotFound {
+                module_name: module_name.clone(),
+                path: header_path,
+            });
         }
-        Ok(())
-    }
 
-    /// Register the signatures of all standard-library functions into the
-    /// function-type registry so that they can be called from user code.
-    ///
-    /// The registered functions are:
-    /// * `std::getint()  -> i32`      — read an integer from stdin
-    /// * `std::getch()   -> i32`      — read a single character from stdin
-    /// * `std::putint(i32)`           — print an integer to stdout
-    /// * `std::putch(i32)`            — print a character to stdout
-    /// * `std::timer_start(i32)`      — start a named timer
-    /// * `std::timer_stop(i32)`       — stop a named timer
-    /// * `std::putarray(i32, *[i32])` — print an array of integers
-    ///
-    /// No corresponding `Function` entries are added to the module function
-    /// list here; the printer will emit them as external declarations because
-    /// they lack a body.
-    fn register_std_functions(&mut self) -> Result<(), Error> {
-        let std_functions = vec![
-            ("std::getint", vec![], Dtype::I32),
-            ("std::getch", vec![], Dtype::I32),
-            (
-                "std::putint",
-                vec![("a".to_string(), Dtype::I32)],
-                Dtype::Void,
-            ),
-            (
-                "std::putch",
-                vec![("a".to_string(), Dtype::I32)],
-                Dtype::Void,
-            ),
-            (
-                "std::timer_start",
-                vec![("lineno".to_string(), Dtype::I32)],
-                Dtype::Void,
-            ),
-            (
-                "std::timer_stop",
-                vec![("lineno".to_string(), Dtype::I32)],
-                Dtype::Void,
-            ),
-            (
-                "std::putarray",
-                vec![
-                    ("n".to_string(), Dtype::I32),
-                    (
-                        "a".to_string(),
-                        Dtype::ptr_to(Dtype::Array {
-                            element: Box::new(Dtype::I32),
-                            length: None,
-                        }),
-                    ),
-                ],
-                Dtype::Void,
-            ),
-        ];
+        let source = fs::read_to_string(&header_path)?;
+        let mut parser = crate::parser::Parser::new(&source);
+        parser.generate().map_err(|e| Error::ModuleParseError {
+            module_name: module_name.clone(),
+            message: e.to_string(),
+        })?;
 
-        for (name, arguments, return_dtype) in std_functions {
-            self.registry.function_types.insert(
-                name.to_string(),
-                FunctionType {
-                    return_dtype,
-                    arguments,
-                },
-            );
+        if let Some(program) = parser.program {
+            for elem in program.elements.iter() {
+                // Header files are expected to contain only `fn` declarations.
+                // Other element kinds (global variables, struct definitions,
+                // function bodies) are not valid in a `.teah` file and are
+                // silently skipped.
+                if let ast::ProgramElementInner::FnDeclStmt(fn_decl_stmt) = &elem.inner {
+                    // Qualify the function name with the module prefix so that
+                    // call sites such as `std::getint()` resolve correctly.
+                    let mut prefixed_decl = fn_decl_stmt.fn_decl.as_ref().clone();
+                    prefixed_decl.identifier =
+                        format!("{module_name}::{}", prefixed_decl.identifier);
+                    self.handle_fn_decl(&prefixed_decl)?;
+                }
+            }
         }
 
         Ok(())
