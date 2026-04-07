@@ -15,7 +15,7 @@ use crate::ir::value::Named;
 /// - `Composite` type specifiers (e.g., user-defined structs) map to `Dtype::Struct`.
 /// - `Reference` type specifiers (e.g., `&[T]`) map to a pointer to an unsized array,
 ///   where the element type is resolved recursively.
-/// - `BuiltIn` type specifiers (e.g., `int`) and `None` (absent specifier) both default
+/// - `BuiltIn` type specifiers (e.g., `i32`) and `None` (absent specifier) both default
 ///   to `Dtype::I32`.
 fn base_dtype(type_specifier: &Option<ast::TypeSpecifier>) -> Dtype {
     match type_specifier.as_ref().map(|t| &t.inner) {
@@ -75,7 +75,7 @@ impl From<ast::TypeSpecifier> for Dtype {
 
 /// Converts a reference to an `ast::TypeSpecifier` into the corresponding `Dtype`.
 ///
-/// - `BuiltIn` maps to `Dtype::I32` (the only built-in type is `int`).
+/// - `BuiltIn` maps to `Dtype::I32` (the only built-in type is `i32`).
 /// - `Composite` maps to `Dtype::Struct` with the user-defined type name.
 /// - `Reference` maps to a pointer to an unsized array whose element type
 ///   is recursively converted from the inner type specifier.
