@@ -6,6 +6,7 @@ use super::types::FunctionType;
 use super::value::GlobalVariable;
 use crate::ast;
 use indexmap::IndexMap;
+use std::path::PathBuf;
 
 use super::types::StructType;
 
@@ -34,6 +35,10 @@ pub struct Module {
 pub struct IrGenerator<'a> {
     /// A reference to the input AST program to be compiled.
     pub input: &'a ast::Program,
+    /// The directory containing the source file being compiled.
+    /// Used to resolve module header files (e.g. `std.teah`) relative
+    /// to the source file when processing `use` statements.
+    pub source_dir: PathBuf,
     /// The output module that accumulates generated IR constructs.
     pub module: Module,
     /// The registry of type definitions available during IR generation.
@@ -48,9 +53,12 @@ impl<'a> IrGenerator<'a> {
     pub(crate) const TARGET_DATALAYOUT: &'static str =
         "e-m:e-i8:8:32-i16:16:32-i64:64-i128:128-n32:64-S128";
 
-    /// Creates a new `IrGenerator` with the given AST program as input.
+    /// Creates a new `IrGenerator` with the given AST program as input
+    /// and the directory containing the source file.
+    /// The `source_dir` is used to resolve module header files when
+    /// processing `use` statements.
     /// Initializes an empty module and an empty type registry.
-    pub fn new(input: &'a ast::Program) -> Self {
+    pub fn new(input: &'a ast::Program, source_dir: PathBuf) -> Self {
         let module = Module {
             global_list: IndexMap::new(),
             function_list: IndexMap::new(),
@@ -61,6 +69,7 @@ impl<'a> IrGenerator<'a> {
         };
         Self {
             input,
+            source_dir,
             module,
             registry,
         }
